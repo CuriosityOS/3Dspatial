@@ -190,8 +190,15 @@
         }
         .control-group span {
            /* display: none; */ /* Hiding slider related styles if slider is removed */
-        }
-    </style>
+       }
+
+       #orientationStatus {
+           margin-top: 15px;
+           font-size: 14px;
+           color: #888;
+           min-height: 20px; /* Reserve space */
+       }
+   </style>
 </head>
 <body>
     <h1>3D Spatial Audio Positioning</h1>
@@ -210,8 +217,11 @@
         </div>
         
         <button id="pingButton">Play Ping Sound</button>
+        <button id="requestOrientation" style="display: none;">Enable Head Tracking</button> <!-- Initially hidden -->
         <div id="status">Initializing audio...</div>
     </div>
+
+    <div id="orientationStatus">Head tracking inactive.</div>
 
     <div class="canvas-section">
         <div class="canvas-container">
@@ -291,13 +301,16 @@
         const posZDisplay = document.getElementById('posZ');
         const distanceDisplay = document.getElementById('distance');
         const angleDisplay = document.getElementById('angle');
-        const elevationDisplay = document.getElementById('elevation'); // New display element
+        const elevationDisplay = document.getElementById('elevation');
         const autoPingToggle = document.getElementById('autoPingToggle');
         const pingButton = document.getElementById('pingButton');
+        const requestOrientationButton = document.getElementById('requestOrientation');
+        const orientationStatusDisplay = document.getElementById('orientationStatus');
 
         // --- Event Listeners ---
         pingButton.addEventListener('click', playPing);
         autoPingToggle.addEventListener('change', toggleAutoPing);
+        requestOrientationButton.addEventListener('click', requestOrientationPermission);
 
         // Mouse/Touch events for BOTH canvases
         [canvasXY, canvasXZ].forEach(canvas => {
@@ -318,7 +331,8 @@
         window.addEventListener('load', () => {
             drawScene(ctxXY, canvasCenter, drawingRadius, circleXY, ['X', 'Y']);
             drawScene(ctxXZ, canvasCenter, drawingRadius, circleXZ, ['X', 'Z']);
-            updateAudioPosition(); // Set initial audio position based on default circle states
+            updateAudioPosition(); // Set initial audio position
+            checkOrientationSupport(); // Check for orientation API and permissions
         });
 
 
@@ -705,6 +719,84 @@
         }
 
         // Note: Initial drawing is now done in window.onload
+
+
+        // --- Head Tracking Functions ---
+
+        function checkOrientationSupport() {
+            if (typeof DeviceOrientationEvent !== 'undefined' && typeof DeviceOrientationEvent.requestPermission === 'function') {
+                // iOS 13+ requires permission
+                requestOrientationButton.style.display = 'inline-block'; // Show the button
+                orientationStatusDisplay.textContent = 'Head tracking requires permission.';
+            } else if (typeof DeviceOrientationEvent !== 'undefined') {
+                // Non-iOS or older iOS, permission not needed or implicit
+                startOrientationTracking();
+            } else {
+                orientationStatusDisplay.textContent = 'Device orientation not supported.';
+            }
+        }
+
+        function requestOrientationPermission() {
+            DeviceOrientationEvent.requestPermission()
+                .then(permissionState => {
+                    if (permissionState === 'granted') {
+                        startOrientationTracking();
+                        requestOrientationButton.style.display = 'none'; // Hide button after granting
+                    } else {
+                        orientationStatusDisplay.textContent = 'Permission denied for head tracking.';
+                    }
+                })
+                .catch(error => {
+                     console.error('Error requesting device orientation permission:', error);
+                     orientationStatusDisplay.textContent = 'Error requesting permission.';
+                });
+        }
+
+        function startOrientationTracking() {
+             window.addEventListener('deviceorientation', handleOrientation);
+             orientationStatusDisplay.textContent = 'Head tracking active.';
+        }
+
+        function handleOrientation(event) {
+            if (!audioContext || !listener || !event.alpha || !event.beta || !event.gamma) {
+                return; // Make sure context is ready and we have data
+            }
+
+            // Convert degrees to radians
+            const alphaRad = event.alpha * (Math.PI / 180); // Z axis rotation (compass heading)
+            const betaRad = event.beta * (Math.PI / 180);   // X axis rotation (front/back tilt)
+            const gammaRad = event.gamma * (Math.PI / 180); // Y axis rotation (left/right tilt)
+
+            // --- Simple Euler to Vector Conversion (May have limitations like gimbal lock) ---
+            // More robust solutions involve Quaternions or Rotation Matrices, but this is a starting point.
+
+            // Calculate forward vector components based on alpha and beta
+            const fwdX = Math.cos(betaRad) * Math.sin(alphaRad);
+            const fwdY = -Math.sin(betaRad); // Y is up, so tilting forward (positive beta) points listener down
+            const fwdZ = -Math.cos(betaRad) * Math.cos(alphaRad); // Z is forward, default is (0,0,-1)
+
+            // Calculate up vector components based on all angles (more complex)
+            // Simplified approach: Adjust default up vector (0, 1, 0) based on gamma (roll)
+            // This isn't fully correct for all orientations but works reasonably for typical head movements.
+            const upX = Math.sin(gammaRad) * Math.cos(alphaRad); // Approximation
+            const upY = Math.cos(gammaRad);
+            const upZ = Math.sin(gammaRad) * Math.sin(alphaRad); // Approximation
+
+
+            // Update listener orientation using setValueAtTime for smooth updates if possible
+            const now = audioContext.currentTime;
+            if (listener.forwardX) { // Check for modern API support
+                listener.forwardX.setValueAtTime(fwdX, now);
+                listener.forwardY.setValueAtTime(fwdY, now);
+                listener.forwardZ.setValueAtTime(fwdZ, now);
+                listener.upX.setValueAtTime(upX, now);
+                listener.upY.setValueAtTime(upY, now);
+                listener.upZ.setValueAtTime(upZ, now);
+            } else if (listener.setOrientation) { // Fallback for older API
+                listener.setOrientation(fwdX, fwdY, fwdZ, upX, upY, upZ);
+            }
+        }
+
     </script>
 </body>
 </html>
