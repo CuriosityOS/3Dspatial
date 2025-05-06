@@ -1,0 +1,25 @@
+{
+  "name": "3d-spatial-audio",
+  "version": "1.0.0",
+  "description": "3D spatial audio experience with Web Audio API",
+  "main": "server/server.js",
+  "scripts": {
+    "start": "node server/server.js",
+    "dev": "nodemon server/server.js",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [
+    "3D",
+    "audio",
+    "spatial",
+    "web-audio-api"
+  ],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "express": "^4.18.2"
+  },
+  "devDependencies": {
+    "nodemon": "^3.0.1"
+  }
+}
